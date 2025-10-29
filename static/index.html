@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Modern Calculator</title>
+<style>
+  :root {
+    --bg:#0f1221; --panel:#171a2b; --btn:#22253a; --btn-alt:#2c3150;
+    --op:#5b6bff; --accent:#7af0b6; --text:#e6e9f2; --muted:#9aa3ba;
+  }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{
+    margin:0; display:grid; place-items:center; background:radial-gradient(60% 80% at 70% 20%, #1d2240, #0b0e1a);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    color:var(--text);
+  }
+  /* global theme toggle button (top-left of page) */
+  #themeToggle{
+    position:fixed; left:18px; top:18px; z-index:10;
+    border:none; border-radius:999px; padding:8px 12px; font-weight:600;
+    background:#2c3150; color:#e6e9f2; cursor:pointer;
+    box-shadow:0 8px 18px rgba(0,0,0,.35);
+  }
+
+  .wrap{
+    width:min(380px, 92vw); background:linear-gradient(180deg,#181c31 0%, #121528 100%);
+    border:1px solid #232745; border-radius:22px; box-shadow:0 20px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    overflow:hidden; position:relative;
+  }
+  .display{
+    padding:22px 20px 10px; text-align:right; min-height:110px;
+    display:flex; flex-direction:column; justify-content:flex-end; gap:8px;
+    background:linear-gradient(180deg,rgba(255,255,255,.02), rgba(255,255,255,0));
+  }
+  .formula{font-size:14px; color:var(--muted); min-height:18px; word-wrap:anywhere}
+  .result{font-size:40px; font-weight:700; letter-spacing:.5px; word-wrap:anywhere}
+  .keys{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:16px;
+    background:linear-gradient(180deg,#121528 0%, #0f1221 100%);
+  }
+  button{
+    border:none; border-radius:14px; padding:16px 14px; font-size:18px; font-weight:600; color:var(--text);
+    background:var(--btn); box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 6px 16px rgba(0,0,0,.35);
+    cursor:pointer; transition:transform .06s ease, filter .2s ease, background .2s ease;
+    user-select:none;
+  }
+  button:active{ transform:scale(.98) }
+  .op{ background:linear-gradient(180deg, #2e3560, #242a4d) }
+  .accent{ background:linear-gradient(180deg, #18c38d, #0fb177); color:#05130d }
+  .pill{ grid-column: span 2 }
+  .muted{ background:var(--btn-alt); color:var(--muted) }
+  .badge{ font-size:11px; color:var(--muted); padding:0 16px 14px }
+
+  /* Light theme overrides */
+  body.light{
+    --bg:#f5f6fb; --panel:#ffffff; --btn:#f0f2f8; --btn-alt:#e6e9f2;
+    --op:#3b57f0; --accent:#0fb177; --text:#1a2033; --muted:#5b637a;
+    background:linear-gradient(180deg,#eef1f9,#e7ebf7);
+  }
+  body.light .accent{ color:#ffffff }
+</style>
+</head>
+<body>
+  <!-- Theme toggle: now at top-left of the whole page -->
+  <button id="themeToggle" aria-label="Toggle theme">Light</button>
+
+  <main class="wrap" role="application" aria-label="Calculator">
+    <section class="display" aria-live="polite">
+      <div class="formula" id="formula"></div>
+      <div class="result" id="result">0</div>
+    </section>
+
+    <div class="keys">
+      <button class="muted" data-act="clear">AC</button>
+      <button class="muted" data-act="back">⌫</button>
+      <button class="muted" data-act="percent">%</button>
+      <button class="op" data-op="÷">÷</button>
+
+      <button data-num="7">7</button>
+      <button data-num="8">8</button>
+      <button data-num="9">9</button>
+      <button class="op" data-op="×">×</button>
+
+      <button data-num="4">4</button>
+      <button data-num="5">5</button>
+      <button data-num="6">6</button>
+      <button class="op" data-op="−">−</button>
+
+      <button data-num="1">1</button>
+      <button data-num="2">2</button>
+      <button data-num="3">3</button>
+      <button class="op" data-op="+">+</button>
+
+      <button class="pill" data-num="0">0</button>
+      <button data-act="dot">.</button>
+      <button class="accent" data-act="equal">=</button>
+    </div>
+
+    <div class="badge">Keyboard: 0-9 · + - * / · Enter(=) · Backspace · C(clear)</div>
+  </main>
+
+<script>
+(() => {
+  const resEl = document.getElementById('result');
+  const formEl = document.getElementById('formula');
+
+  let current = '0';
+  let formula = '';
+  let lastPressed = ''; // 'num' | 'op' | 'eq' | 'other'
+
+  const ops = {
+    '+': (a,b)=>a+b,
+    '−': (a,b)=>a-b,
+    '×': (a,b)=>a*b,
+    '÷': (a,b)=> b===0 ? NaN : a/b
+  };
+
+  function setCurrent(v){ current = v; resEl.textContent = v; }
+  function setFormula(v){ formula = v; formEl.textContent = v; }
+
+  function appendDigit(d){
+    // NEW: if last key was an operator, start a fresh number
+    if (lastPressed === 'op' || lastPressed === 'eq') { setFormula(lastPressed==='eq' ? '' : formula); setCurrent('0'); }
+    if (current === '0' && d !== '.') current = '';
+    if (d === '.' && current.includes('.')) return;
+    setCurrent(current + d);
+    lastPressed = 'num';
+  }
+
+  function applyOp(opSymbol){
+    // Replace operator if user presses another operator
+    if (lastPressed === 'op') {
+      setFormula(formula.slice(0,-1) + opSymbol);
+      return;
+    }
+    if (formula === '') {
+      // First operator after first number
+      setFormula(current + opSymbol);
+      setCurrent('0');               // NEW: clear display after operator
+    } else {
+      // Chain: compute pending, show new base, then clear for next number
+      const { value } = computePending(formula, current);
+      setFormula(value + opSymbol);
+      setCurrent('0');               // NEW: clear display after operator
+    }
+    lastPressed = 'op';
+  }
+
+  function computePending(formulaStr, curStr){
+    const opSymbol = formulaStr.slice(-1);
+    const a = parseFloat(formulaStr.slice(0, -1));
+    const b = parseFloat(curStr);
+    const fn = ops[opSymbol];
+    const value = Number.isFinite(fn?.(a,b)) ? round6(fn(a,b)) : 'Error';
+    return { value };
+  }
+
+  function round6(n){ return Math.round(n * 1e6) / 1e6; }
+
+  function equals(){
+    if (formula === '' || lastPressed === 'op') return;
+    const { value } = computePending(formula, current);
+    setFormula(formula + current + ' =');
+    setCurrent(String(value));
+    lastPressed = 'eq';
+  }
+
+  function percent(){
+    const v = parseFloat(current || '0') / 100;
+    setCurrent(String(round6(v)));
+  }
+
+  function backspace(){
+    if (lastPressed === 'eq') return;
+    if (current.length <= 1) setCurrent('0');
+    else setCurrent(current.slice(0,-1));
+  }
+
+  function clearAll(){
+    setCurrent('0'); setFormula(''); lastPressed = '';
+  }
+
+  // Click handling
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    const d = btn.dataset;
+    if (d.num) return appendDigit(d.num);
+    if (d.op)  return applyOp(d.op);
+    if (d.act === 'dot') return appendDigit('.');
+    if (d.act === 'equal') return equals();
+    if (d.act === 'percent') return percent();
+    if (d.act === 'back') return backspace();
+    if (d.act === 'clear') return clearAll();
+  });
+
+  // Keyboard support
+  window.addEventListener('keydown', (e)=>{
+    const k = e.key;
+    if (/\d/.test(k)) return appendDigit(k);
+    if (k === '.') return appendDigit('.');
+    if (k === '+' || k === '-' || k === '*' || k === '/'){
+      e.preventDefault();
+      const map = {'+':'+', '-':'−', '*':'×', '/':'÷'};
+      return applyOp(map[k]);
+    }
+    if (k === 'Enter' || k === '=') { e.preventDefault(); return equals(); }
+    if (k === 'Backspace') return backspace();
+    if (k.toLowerCase() === 'c') return clearAll();
+    if (k === '%') return percent();
+  });
+
+  // === Theme toggle (top-left button) ===
+  const btn = document.getElementById('themeToggle');
+  const saved = localStorage.getItem('theme') || 'dark';
+  if (saved === 'light') document.body.classList.add('light');
+  btn.textContent = document.body.classList.contains('light') ? 'Dark' : 'Light';
+
+  btn.addEventListener('click', ()=>{
+    document.body.classList.toggle('light');
+    const isLight = document.body.classList.contains('light');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    btn.textContent = isLight ? 'Dark' : 'Light';
+  });
+})();
+</script>
+</body>
+</html>

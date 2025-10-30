@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
-app = FastAPI(title="Vishwa's API + Calculator")
+app = FastAPI(title="Vishwa's Calculator API")
 
-# Serve the 'static' folder as a website at /calc (serves index.html automatically)
 app.mount("/calc", StaticFiles(directory="static", html=True), name="calc")
 
 @app.get("/")
-def home():
-    return {"message": "Hello, Vishwa! Your API and Calculator are live 🚀"}
-
+def root():
+    return RedirectResponse(url="/calc")
